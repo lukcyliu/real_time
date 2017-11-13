@@ -77,7 +77,7 @@ double* TurnningTest(double gyoX, double gyoY, double gyoZ, double magX, double 
     if(magY > 0)
         magOrientation = asin(magX / magNorm) * t_rad2deg;
     else
-        magOrientation = (M_PI - asin(magX / magNorm)) * t_rad2deg;
+        magOrientation = (3.1415926 - asin(magX / magNorm)) * t_rad2deg;
     if(magOrientation > 180)
         magOrientation -= 360;
 

@@ -58,7 +58,8 @@ extern float q0, q1, q2, q3;
 int count_itr = 0;
 const int worksize = 1500;
 //-------------------deal thread set-------------------------------------------
-int datacnt = 1;
+int datacnt = 0;
+double samplePeriod = 0.1;
 const double INS_drift_weight = 0;
 int doTurning = 1;//是否用turning算法航位推算覆盖Vccq,0为否
 double stepP[3] = {0,0,0};
@@ -80,7 +81,7 @@ double *Fn;
 double Vccq[3];
 double Vcc[3];
 double lastVx = 0.0, lastVy = 0.0, lastVz = 0.0;
-double samplePeriod = 0.2;
+
 double Rm = 0, Rn = 0, R0 = 0;
 double Last_L = 0.0, Last_E = 0.0, Last_h = 0.0;
 double pre_L = 0.0, pre_E = 0.0, pre_h = 0.0;
@@ -280,7 +281,7 @@ void *start_deal(void *que) {
             Fn = MatMulk(Fn, 3, 1, G0);
             Vccq[0] = -Fn[0];
             Vccq[1] = Fn[1];
-            Vccq[2] = Fn[2] + G0;
+            Vccq[2] = Fn[2] - G0;
             if(doTurning == 1){
                 Vccq[0] = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180);
                 Vccq[1] = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180);
@@ -376,9 +377,9 @@ void *start_deal(void *que) {
                 AddS.y = INS_L;
                 AddS.z = INS_h;
             }
-            fprintf(fresult, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
+            fprintf(fresult, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
                     datacnt, Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], Vcc[0], Vcc[1], Vcc[2], INS_E * rad2deg,
-                    INS_L * rad2deg, INS_h);
+                    INS_L * rad2deg, INS_h,resultOrientation[3]);
             fprintf(f_imu_a, "%d,%f,%f,%f\n", datacnt, Vccq[0], Vccq[1], Vccq[2]);
             fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, Vcc[0], Vcc[1], Vcc[2]);
             fprintf(f_imu_p, "%d,%f,%f,%f\n", datacnt, INS_E * rad2deg, INS_L * rad2deg, INS_h);
@@ -645,17 +646,17 @@ void collectSensorData(int fd) {
                         // mag0_x /= AngCalN;
                         // mag0_y /= AngCalN;
                         // mag0_z /= AngCalN;
-                        
+
                         // accCalStc_X = acc0_x;
                         // accCalStc_Y = acc0_y;
                         // accCalStc_Z = acc0_z;
 
-                    // } else 
+                    // } else
 
 					input_data.m_x = stcMag.h[0];
 					input_data.m_y = stcMag.h[1];
 					input_data.m_z = stcMag.h[2];
-                    
+
                     break;
                 case 0x57:
                     stcLonLat.lLon = ((short) ucRxBuffer[5] << 24) | ((short) ucRxBuffer[4] << 16) |
