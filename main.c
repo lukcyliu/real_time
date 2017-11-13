@@ -16,24 +16,17 @@
 
 #define accCalNum 500
 #define windowWidth 12
-#define rad2deg 57.29578
+#define rad2deg 57.295780490442968321226628812406
+#define deg2rad 0.01745329237161968996669562749648
 
 struct Quaternion euarToQuaternion(double yaw, double pitch, double roll);
-
 void quaternionToMahonyR(struct Quaternion Q);
-
 void accToFn(double x, double y, double z);
-
 void *start_deal(void *que);
-
 void write_raw_data(struct Data d, FILE *fp);
-
 void write_slidefit_data(struct slideRes r, FILE *fp);
-
 void write_raw_gps(struct Data d, FILE *fp);
-
 void setMahonyR();
-
 
 struct STime stcTime;
 struct SAcc stcAcc;
@@ -45,53 +38,64 @@ struct SGPSV stcGPSV;
 struct SQUAT stcQUAT;
 struct SDOP stcDOP;
 
-//Re长半轴 r短半轴 f椭-球扁率 e椭球偏心率 wie地球自转角速率
-const double earthRe = 6378137, earthr = 6356752.3142, earthf = 1 / 298.257, earthe = 0.0818, earthwie = 7.292e-5;
 struct Data input_data;
 struct CircleQueue queue;
-double accCalStc_X = -0.09092, accCalStc_Y = 0.081208, accCalStc_Z = 0.015632;
+struct Quaternion Q0;
+
+struct slideRes sum_buf;
+double*** smoothRes;
+
+extern float q0, q1, q2, q3;
+extern double G0;
+
+//Re长半轴 r短半轴 f椭-球扁率 e椭球偏心率 wie地球自转角速率
+const double earthRe = 6378137,earthr = 6356752.3142,earthf = 1 / 298.257,earthe = 0.0818,earthwie = 7.292e-5;
+//时间间隔
+const double samplePeriod = 0.2;
+//加速度零偏
+const double accCalStc_X = -0.09092;
+const double accCalStc_Y = 0.081208;
+const double accCalStc_Z = 0.015632;
+//GPS_INS距离差置信区间
+const double distace_GPS = 10;
+//重置卡尔曼工作区间
+const int worksize = 1500;
+//惯导积分漂移权值
+const double INS_drift_weight = 0;
+//平滑窗口大小
+const int width = 12;
+
+//标志位与记位符
+int firstGPSOff = 0;
+int GPSOff = 0;
+int firstsetOffLocation = 1;
+int GPSoffAddMod = 1;
+int firstSmooth = 0;
+int doTurning = 1;//是否用turning算法航位推算覆盖Vccq,0为否
+int count_itr = 0;
+int datacnt = 1;
+
 double pitch0 = 0, roll0 = 0, yaw0 = 0;
 double Pitch = 0, Roll = 0, Yaw = 0;
-struct Quaternion Q0;
-extern float q0, q1, q2, q3;
 
-int count_itr = 0;
-const int worksize = 1500;
-//-------------------deal thread set-------------------------------------------
-int datacnt = 0;
-double samplePeriod = 0.1;
-const double INS_drift_weight = 0;
-int doTurning = 1;//是否用turning算法航位推算覆盖Vccq,0为否
 double stepP[3] = {0,0,0};
 double gyoP[3] = {0,0,0};
 double magP[3] = {0,0,0};
-
-
-int firstGPSOff = 0;
-int GPSOff = 0;
-//定义全局的旋转矩阵
-double *mahonyR;
+double *mahonyR, *Fn;
 double m_temp[3];
-const int width = 12;//平滑窗口大小
-int firstSmooth = 0;
-
 double Px = 0, Py = 0;
-
-double *Fn;
+double lastGPSLongtitude = 0, lastGPSLattitude = 0, lastGPSh = 0,lastGPSyaw = 0,lastGPSv = 0;
 double Vccq[3];
-double Vcc[3];
+//速度
 double lastVx = 0.0, lastVy = 0.0, lastVz = 0.0;
+double speedE = 0, speedN = 0, speedH = 0;
+//位移
+double last_L = 0.0, last_E = 0.0, last_h = 0.0;
+double L = 0.0, E = 0.0, h = 0.0;
 
 double Rm = 0, Rn = 0, R0 = 0;
-double Last_L = 0.0, Last_E = 0.0, Last_h = 0.0;
-double pre_L = 0.0, pre_E = 0.0, pre_h = 0.0;
-double INS_L = 0.0, INS_E = 0.0, INS_h = 0.0;
-double speedE = 0, speedN = 0, speedH = 0;
-extern double G0;
 double tao = 0;
-struct Position AddS = {0, 0, 0, 0};
-double*** smoothRes;
-struct slideRes sum_buf;
+
 
 void slideFilter(struct Data d) {
     if (firstSmooth == 0) {
@@ -162,7 +166,6 @@ void slideFilter(struct Data d) {
 }
 
 void *start_deal(void *que) {
-    int firstQuatCalStatus = 1;
     double accD0_x = 0, accD0_y = 0, accD0_z = 0;
     double magD0_x = 0, magD0_y = 0, magD0_z = 0;
     struct CircleQueue *queue = (struct CircleQueue *) que;
@@ -175,8 +178,6 @@ void *start_deal(void *que) {
     f_imu_v = fopen("imu_velocity_ENU.csv", "w");
     f_imu_p = fopen("imu_position_ENU.csv", "w");
     fresult = fopen("result.csv", "w");
-    // f_tokf = fopen("file_tokf.csv","w");
-    // f_kfresult = fopen("file_kfresult.csv","w");
 
     while (1) {
         printf("in the deal thread!\n");
@@ -193,6 +194,11 @@ void *start_deal(void *que) {
         double my = data.m_y;
         double mz = -data.m_z;
 
+        double GPSLongitude = data.Longitude;
+        double GPSLattitude = data.Lattitude;
+        double GPSHeight = data.Height;
+        double GPSYaw = data.Yaw;
+        double GPSv = data.GPSV;
 
         if (firstGPSOff == 0) {
             if (data.SN < 4) {
@@ -202,18 +208,22 @@ void *start_deal(void *que) {
                 //第一次接收到GPS信号，确定起点经纬度，或者是GPS信号丢失后重新获取，然后重新设置起点
                 write_raw_gps(data, f_gps);
 
-                Last_E = data.Longitude / rad2deg;
-                Last_L = data.Lattitude / rad2deg;
-                Last_h = data.Height;
-                INS_E = Last_E;
-                INS_L = Last_L;
-                INS_h = Last_h;
+                lastGPSLongtitude = GPSLongitude;
+                lastGPSLattitude = GPSLattitude;
+                lastGPSh = GPSHeight;
+                lastGPSyaw = GPSYaw;
+                lastGPSv = GPSv;
 
-                pre_E = Last_E;
-                pre_L = Last_L;
-                pre_h = Last_h;
-                printf("Now we set the GPS first location: E:%.5f L:%.5f...............session 0\n", Last_E * rad2deg,
-                       Last_L * rad2deg);
+                last_E = GPSLongitude / rad2deg;
+                last_L = GPSLattitude / rad2deg;
+                last_h = GPSHeight;
+
+                E = last_E;
+                L = last_L;
+                h = last_h;
+
+                printf("Now we set the GPS first location: E:%.5f L:%.5f...............session 0\n", last_E * rad2deg,
+                       last_L * rad2deg);
                 firstGPSOff = 1;
                 datacnt++;
                 
@@ -248,7 +258,8 @@ void *start_deal(void *que) {
 
             speedN = sum_buf.slideGps_v * cos(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
             speedE = sum_buf.slideGps_v * sin(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
-            speedH = data.Height - Last_h;//GPS速度
+            speedH = data.Height - last_h;//GPS速度
+
             //更新四元数
             MahonyAHRSupdate((float) (gx / rad2deg), (float) (gy / rad2deg), (float) (gz / rad2deg),
                              (float)ax, (float)ay, (float)az,
@@ -272,8 +283,8 @@ void *start_deal(void *que) {
             Py += sin(Yaw * 3.1415926 / 180);
 
             //计算更新的子午曲率半径Rm和卯酉曲率半径Rn以及曲率平均半径R0
-            Rm = earthRe * (1 - 2 * earthf + 3 * earthf * sin(Last_L) * sin(Last_L));
-            Rn = earthRe * (1 + earthf * sin(Last_L) * sin(Last_L));
+            Rm = earthRe * (1 - 2 * earthf + 3 * earthf * sin(last_L) * sin(last_L));
+            Rn = earthRe * (1 + earthf * sin(last_L) * sin(last_L));
             R0 = sqrt(Rm * Rm + Rn * Rn);
 
             //旋转加速度到东北天导航坐标系进而计算绝对速度微分Vccq
@@ -281,42 +292,47 @@ void *start_deal(void *que) {
             Fn = MatMulk(Fn, 3, 1, G0);
             Vccq[0] = -Fn[0];
             Vccq[1] = Fn[1];
-            Vccq[2] = Fn[2] - G0;
+            Vccq[2] = Fn[2] + G0;
             if(doTurning == 1){
                 Vccq[0] = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180);
                 Vccq[1] = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180);
             }
 
-            Vcc[0] += Vccq[0] * samplePeriod;
-            Vcc[1] += Vccq[1] * samplePeriod;
-            Vcc[2] += Vccq[2] * samplePeriod;
+            lastVx += Vccq[0] * samplePeriod;
+            lastVy += Vccq[1] * samplePeriod;
+            lastVz += Vccq[2] * samplePeriod;
 
-            INS_L = INS_L + (lastVy / (Rm + Last_h)) * samplePeriod;
-            INS_E = INS_E + (lastVx / (cos(Last_L) * (Rn + Last_h))) * samplePeriod;
-            INS_h = INS_h - lastVz * samplePeriod;
+            L += (lastVy / (Rm + last_h)) * samplePeriod;
+            E += (lastVx / (cos(last_L) * (Rn + last_h))) * samplePeriod;
+            h -= lastVz * samplePeriod;
 
-
-            lastVx = Vcc[0];
-            lastVy = Vcc[1];
-            lastVz = Vcc[2];
-            Last_L = INS_L;
-            Last_h = INS_h;
-
-            pre_E = data.Longitude;
-            pre_L = data.Lattitude;
-            pre_h = data.Height;
+            last_L = L;
+            last_h = h;
 
             if (data.SN < 4) {
                 printf("lost GPS..\nNow We are in INS Mode...................................session 3\n");
                 GPSOff = 1;
+                if(firstsetOffLocation == 1){
+                    L = lastGPSLattitude * deg2rad;
+                    E = lastGPSLongtitude * deg2rad;
+                    h = lastGPSh;
+                    firstsetOffLocation = 0;
+                }
+                if(GPSoffAddMod == 1){
+                    lastVx = lastGPSv * sin(sum_buf.slideGps_yaw * deg2rad) / 3.6;
+                    lastVy = lastGPSv * cos(sum_buf.slideGps_yaw * deg2rad) / 3.6;
+                }else if(GPSoffAddMod == 2){
+                    lastVx = lastGPSv * sin(resultOrientation[3] * deg2rad) / 3.6;
+                    lastVy = lastGPSv * cos(resultOrientation[3] * deg2rad) / 3.6;
+                }else if(GPSoffAddMod == 3){
+                    lastVx = lastGPSv * sin(Yaw * deg2rad) / 3.6;
+                    lastVy = lastGPSv * cos(Yaw * deg2rad) / 3.6;
+                }
+                L += (lastVy / (Rm + last_h)) * 0.2 * INS_drift_weight;
+                E += (lastVx / (cos(last_L) * (Rn + last_h))) * 0.2 * INS_drift_weight;
 
-                INS_L = INS_L - (lastVy / (Rm + Last_h)) * samplePeriod * INS_drift_weight;
-                INS_E = INS_E - (lastVy / (cos(Last_L) * (Rn + Last_h))) * samplePeriod * INS_drift_weight;
-                INS_h = INS_h - lastVz * samplePeriod * INS_drift_weight;
-                AddS.x = INS_E;
-                AddS.y = INS_L;
-                AddS.z = INS_h;
             } else if (data.SN >= 4) {
+                firstsetOffLocation = 1;
                 if(count_itr++ == worksize){
                     firstGPSOff = 0;
                     tao = 0;
@@ -327,62 +343,47 @@ void *start_deal(void *que) {
                 //gps/ins mode
                 write_raw_gps(data, f_gps);
                 printf("Now we are in the GPS/INS mode...........................................session 2\n");
-
-
                 //初速度设置
-
                 if (GPSOff == 1) {
-                    INS_E = data.Longitude / rad2deg;
-                    INS_L = data.Lattitude / rad2deg;
-                    INS_h = data.Height;
+                    E = GPSLongitude / rad2deg;
+                    L = GPSLattitude / rad2deg;
+                    h = GPSHeight;
                     printf("Now we are setting the GPS location again after GPS lost...........................................session 2_1\n");
                     GPSOff = 0;
                 }
-//            initnum(data.Lattitude, data.Height, speedN, speedE);
                 tao += samplePeriod;
-                double Dpv[6] = {INS_L * rad2deg - pre_L, INS_E * rad2deg - pre_E, INS_h - pre_h, Vcc[0] - speedE,
-                                 Vcc[1] - speedN, Vcc[2] - speedH};
+                double Dpv[6] = {L * rad2deg - GPSLattitude, E * rad2deg - GPSLongitude, h - GPSHeight, lastVx - speedE,
+                                 lastVy - speedN, lastVz - speedH};
+                double *XX = kalman_GPS_INS_pv(Dpv, lastVx, lastVy, lastVz, last_L, last_h, mahonyR, Fn, tao, Rm, Rn);
 
-//                char datas_tokf[10000];
-//                sprintf(datas_tokf,"%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
-//                        datacnt,Dpv[0],Dpv[1],Dpv[2]
-//                        ,Dpv[3],Dpv[4],Dpv[5]
-//                        ,Vcc[0],Vcc[1],Vcc[2]
-//                        ,Last_L,Last_h,Fn[0]
-//                        ,Fn[1],Fn[2]
-//                        ,tao,Rm,Rn
-//                        ,mahonyR[0],mahonyR[1],mahonyR[2]
-//                        ,mahonyR[3],mahonyR[4],mahonyR[5]
-//                        ,mahonyR[6],mahonyR[7],mahonyR[8]);
-//                fprintf(f_tokf,datas_tokf,10000);
-                double *XX = kalman_GPS_INS_pv(Dpv, Vcc[0], Vcc[1], Vcc[2], Last_L, Last_h, mahonyR, Fn, tao, Rm, Rn);
+                lastVx -= XX[3];
+                lastVy -= XX[4];
+                lastVz -= XX[5];
+                
+                L -= 0.29 * XX[6];
+                E -= 0.32 * XX[7];
+                h -= XX[8];
 
-//                char datas_kfresult[10000];
-//                sprintf(datas_kfresult,"%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
-//                        datacnt,XX[0],XX[1],XX[2],XX[3],XX[4],XX[5],XX[6],XX[7],XX[8],XX[9]
-//                        ,XX[10],XX[11],XX[12],XX[13],XX[15]);
-//                fprintf(f_kfresult,datas_kfresult,10000);
+                lastGPSLongtitude = GPSLongitude;
+                lastGPSLattitude = GPSLattitude;
+                lastGPSh = GPSHeight;
+                lastGPSyaw = GPSYaw;
+                lastGPSv = GPSv;
 
-                Vcc[0] -= XX[3];
-                Vcc[1] -= XX[4];
-                Vcc[2] -= XX[5];
-                lastVx = Vcc[0];
-                lastVy = Vcc[1];
-                lastVz = Vcc[2];
-                INS_L -= 0.29 * XX[6];
-                INS_E -= 0.32 * XX[7];
-                INS_h -= XX[8];
-
-                AddS.x = INS_E;
-                AddS.y = INS_L;
-                AddS.z = INS_h;
+                double L_distance = fabs(L * rad2deg - GPSLattitude) * 111000;
+                double E_distance = fabs(E * rad2deg - GPSLongitude) * 111000 * cos(GPSLattitude);
+                double distance = sqrt(pow(L_distance,2) + pow(E_distance,2));
+                if(distance >= distace_GPS){
+                    L = GPSLattitude * deg2rad;
+                    E = GPSLongitude * deg2rad;
+                }
             }
-            fprintf(fresult, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
-                    datacnt, Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], Vcc[0], Vcc[1], Vcc[2], INS_E * rad2deg,
-                    INS_L * rad2deg, INS_h,resultOrientation[3]);
+            fprintf(fresult, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
+                    datacnt, Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], Vcc[0], Vcc[1], Vcc[2], E * rad2deg,
+                    L * rad2deg, h);
             fprintf(f_imu_a, "%d,%f,%f,%f\n", datacnt, Vccq[0], Vccq[1], Vccq[2]);
-            fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, Vcc[0], Vcc[1], Vcc[2]);
-            fprintf(f_imu_p, "%d,%f,%f,%f\n", datacnt, INS_E * rad2deg, INS_L * rad2deg, INS_h);
+            fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, lastVx, lastVy, lastVz);
+            fprintf(f_imu_p, "%d,%f,%f,%f\n", datacnt, E * rad2deg, L * rad2deg, h);
             datacnt++;
 			sum_buf.slideAcc_x = 0;
 			sum_buf.slideAcc_y = 0;
@@ -455,12 +456,12 @@ void write_raw_data(struct Data d, FILE *fp) {
             , d.acc_x, d.acc_y, d.acc_z
             , d.gyo_x, d.gyo_y, d.gyo_z
             , d.m_x, d.m_y, d.m_z
-            , d.angle_x, d.angle_y, d.angle_z,
-            d.Longitude, d.Lattitude, d.Height
+            , d.angle_x, d.angle_y, d.angle_z
+            , d.Longitude, d.Lattitude, d.Height
             , d.Yaw, d.GPSV, d.Q_q0
             , d.Q_q1, d.Q_q2, d.Q_q3
-            , d.SN, d.PDOP, d.HDOP,
-            d.VDOP,datacnt);
+            , d.SN, d.PDOP, d.HDOP
+            , d.VDOP,datacnt);
 }
 
 void write_slidefit_data(struct slideRes r, FILE *fp) {
@@ -646,17 +647,17 @@ void collectSensorData(int fd) {
                         // mag0_x /= AngCalN;
                         // mag0_y /= AngCalN;
                         // mag0_z /= AngCalN;
-
+                        
                         // accCalStc_X = acc0_x;
                         // accCalStc_Y = acc0_y;
                         // accCalStc_Z = acc0_z;
 
-                    // } else
+                    // } else 
 
 					input_data.m_x = stcMag.h[0];
 					input_data.m_y = stcMag.h[1];
 					input_data.m_z = stcMag.h[2];
-
+                    
                     break;
                 case 0x57:
                     stcLonLat.lLon = ((short) ucRxBuffer[5] << 24) | ((short) ucRxBuffer[4] << 16) |
