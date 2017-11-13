@@ -9,6 +9,7 @@
 
 #include "FileStruct.h"
 #include "Queue.h"
+#include "QueueWindow.h"
 #include "NewKalmanFilter.h"
 #include "MahonyAHRS.h"
 #include "parameter.h"
@@ -40,6 +41,8 @@ struct SDOP stcDOP;
 
 struct Data input_data;
 struct CircleQueue queue;
+struct QueueWindow queueWindow_gyo;
+struct QueueWindow queueWindow_mag;
 struct Quaternion Q0;
 
 struct slideRes sum_buf;
@@ -64,6 +67,7 @@ const int worksize = 1500;
 const double INS_drift_weight = 0;
 //平滑窗口大小
 const int width = 12;
+const int qwindow_size = 10;
 
 //标志位与记位符
 int firstGPSOff = 0;
@@ -169,6 +173,11 @@ void *start_deal(void *que) {
     double accD0_x = 0, accD0_y = 0, accD0_z = 0;
     double magD0_x = 0, magD0_y = 0, magD0_z = 0;
     struct CircleQueue *queue = (struct CircleQueue *) que;
+    struct QueueWindow *qWindow_gyo = &queueWindow_gyo;
+    struct QueueWindow *qWindow_mag = &queueWindow_mag;
+    w_InitQueue(qWindow_gyo,qwindow_size);
+    w_InitQueue(qWindow_mag,qwindow_size);
+
     FILE *f_raw_data, *f_slide, *f_gps, *f_imu_a, *f_imu_v, *f_imu_p,*f_tokf,*f_kfresult,*fresult;
 
     f_raw_data = fopen("raw_data.csv", "w");
@@ -277,6 +286,13 @@ void *start_deal(void *que) {
             gyoP[1] += cos(resultOrientation[0] * 3.1415926 / 180);
             magP[0] += sin(resultOrientation[2] * 3.1415926 / 180);
             magP[1] += cos(resultOrientation[2] * 3.1415926 / 180);
+            if(w_isFull(qWindow_gyo))
+                w_DeQueue(qWindow_gyo);
+            if(w_isFull(qWindow_mag))
+                w_DeQueue(qWindow_mag);
+            w_EnQueue(qWindow_gyo,resultOrientation[1]);
+            w_EnQueue(qWindow_mag,resultOrientation[2]);
+
 
             //测试单步长匀速路径
             Px += cos(Yaw * 3.1415926 / 180);
@@ -379,7 +395,7 @@ void *start_deal(void *que) {
                 }
             }
             fprintf(fresult, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
-                    datacnt, Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], Vcc[0], Vcc[1], Vcc[2], E * rad2deg,
+                    datacnt, Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], lastVx, lastVy, lastVz, E * rad2deg,
                     L * rad2deg, h);
             fprintf(f_imu_a, "%d,%f,%f,%f\n", datacnt, Vccq[0], Vccq[1], Vccq[2]);
             fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, lastVx, lastVy, lastVz);
