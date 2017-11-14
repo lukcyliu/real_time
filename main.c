@@ -102,7 +102,8 @@ double queueWindow_mag_avg = 0;
 double smoothGPSYaw = 0;
 //速度
 double lastVx = 0.0, lastVy = 0.0, lastVz = 0.0;
-double GPSVe = 0, GPSVn = 0, GPSVu = 0;
+double GPSVe = 0.0, GPSVn = 0.0, GPSVu = 0.0;
+double tempVz = 0.0;
 //位移
 double last_L = 0.0, last_E = 0.0, last_h = 0.0;
 double L = 0.0, E = 0.0, h = 0.0;
@@ -386,6 +387,7 @@ void *start_deal(void *que) {
                 lastGPSh = GPSHeight;
                 lastGPSyaw = smoothGPSYaw;
                 lastGPSv = GPSv;
+                tempVz = lastVz;
 
                 double L_distance = fabs(L * rad2deg - GPSLattitude) * 111000;
                 double E_distance = fabs(E * rad2deg - GPSLongitude) * 111000 * cos(GPSLattitude);
@@ -411,6 +413,7 @@ void *start_deal(void *que) {
 
             }
             else if (data.SN < 4) {
+
                 //进行失效速度选择
                 if (ay * G0 > lastGPSv)
                     usepVy = 1;
@@ -430,12 +433,12 @@ void *start_deal(void *que) {
                     INS_drift_weight = 0.5;
                 }
                 printf("lost GPS..\nNow We are in INS Mode...................................session 3\n");
-
                 if(firstsetOffLocation == 1){
                     printf("first set lost GPS location........................................session 3_1\n");
                     L_off = lastGPSLattitude * deg2rad;
                     E_off = lastGPSLongtitude * deg2rad;
                     h_off = lastGPSh;
+
                     firstsetOffLocation = 0;
                 }
                 if (usepVy == 0){
@@ -467,6 +470,7 @@ void *start_deal(void *que) {
                 L = L_off;
                 E = E_off;
                 h = h_off;
+                lastVz = tempVz;
                 printf("%d E = %f, L = %f, Vy = %f ,lastGPSv = %f, lastGPSyaw = %f\n",datacnt,E * rad2deg,L * rad2deg,ay * G0,lastGPSv/ 3.6,lastGPSyaw);
                 GPSOff = 1;
 
@@ -839,7 +843,7 @@ int main(int argc, char *argv[]) {
     for (int i = 0; i < 4; i++) {
         smoothRes[i] = (double **) malloc(sizeof(double *) * 3);
         for (int j = 0; j < 3; j++)
-            smoothRes[i][j] = (double *) malloc(sizeof(double) * 12);
+            smoothRes[i][j] = (double *) malloc(sizeof(double) * width);
     }
 
 
