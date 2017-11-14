@@ -64,18 +64,20 @@ const double distace_GPS = 10;
 //重置卡尔曼工作区间
 const int worksize = 1500;
 //惯导积分漂移权值
-const double INS_drift_weight = 0;
+double INS_drift_weight = 0.5;
 //平滑窗口大小
-const int width = 12;
-const int qwindow_size = 10;
+const int width = 50;
+const int qwindow_size = 12;
 
 //标志位与记位符
+int doTurning = 1;//是否用turning算法航位推算覆盖Vccq,0为否
+int magGood = 0;//磁力有效性标志位
+int usepVy = 1;//是否使用惯导的速度
 int firstGPSOff = 0;
 int GPSOff = 0;
 int firstsetOffLocation = 1;
 int GPSoffAddMod = 1;
 int firstSmooth = 0;
-int doTurning = 1;//是否用turning算法航位推算覆盖Vccq,0为否
 int count_itr = 0;
 int datacnt = 1;
 
@@ -90,15 +92,26 @@ double m_temp[3];
 double Px = 0, Py = 0;
 double lastGPSLongtitude = 0, lastGPSLattitude = 0, lastGPSh = 0,lastGPSyaw = 0,lastGPSv = 0;
 double Vccq[3];
+
+//方向
+double gyrOrienDiff = 0;
+double magOrientation = 0;
+double lastGz = 0;
+double queueWindow_gyoDiff_avg = 0;
+double queueWindow_mag_avg = 0;
+double smoothGPSYaw = 0;
 //速度
 double lastVx = 0.0, lastVy = 0.0, lastVz = 0.0;
-double speedE = 0, speedN = 0, speedH = 0;
+double GPSVe = 0, GPSVn = 0, GPSVu = 0;
 //位移
 double last_L = 0.0, last_E = 0.0, last_h = 0.0;
 double L = 0.0, E = 0.0, h = 0.0;
+double L_off = 0.0,E_off = 0.0,h_off = 0.0;
 
 double Rm = 0, Rn = 0, R0 = 0;
 double tao = 0;
+
+
 
 
 void slideFilter(struct Data d) {
@@ -231,6 +244,10 @@ void *start_deal(void *que) {
                 L = last_L;
                 h = last_h;
 
+                E_off = last_E;
+                L_off = last_L;
+                h_off = last_h;
+
                 printf("Now we set the GPS first location: E:%.5f L:%.5f...............session 0\n", last_E * rad2deg,
                        last_L * rad2deg);
                 firstGPSOff = 1;
@@ -261,13 +278,13 @@ void *start_deal(void *que) {
             }
         } else if (firstGPSOff == 1) {
             write_raw_data(data, f_raw_data);
-
             slideFilter(data);
             write_slidefit_data(sum_buf, f_slide);
 
-            speedN = sum_buf.slideGps_v * cos(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
-            speedE = sum_buf.slideGps_v * sin(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
-            speedH = data.Height - last_h;//GPS速度
+            GPSVn = sum_buf.slideGps_v * cos(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
+            GPSVe = sum_buf.slideGps_v * sin(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
+            GPSVu = data.Height - last_h;//GPS速度
+            smoothGPSYaw = sum_buf.slideGps_yaw;
 
             //更新四元数
             MahonyAHRSupdate((float) (gx / rad2deg), (float) (gy / rad2deg), (float) (gz / rad2deg),
@@ -279,13 +296,19 @@ void *start_deal(void *que) {
             //更新旋转矩阵
             setMahonyR();
 
-            double *resultOrientation = TurnningTest(gx, gy, gz, -mx, -my, mz);
+            double *resultOrientation = TurnningTest(gx, gy, gz, mx, my, mz);
+            resultOrientation[2] = 90 - resultOrientation[2];
+            magOrientation = resultOrientation[2];
             stepP[0] += sin(resultOrientation[3] * 3.1415926 / 180);
             stepP[1] += cos(resultOrientation[3] * 3.1415926 / 180);
             gyoP[0] += sin(resultOrientation[0] * 3.1415926 / 180);
             gyoP[1] += cos(resultOrientation[0] * 3.1415926 / 180);
             magP[0] += sin(resultOrientation[2] * 3.1415926 / 180);
             magP[1] += cos(resultOrientation[2] * 3.1415926 / 180);
+
+            //计算间隔内的陀螺仪绕z轴的方向增量
+            gyrOrienDiff = (gx + lastGz) * samplePeriod * 0.5;
+            
             if(w_isFull(qWindow_gyo))
                 w_DeQueue(qWindow_gyo);
             if(w_isFull(qWindow_mag))
@@ -293,6 +316,8 @@ void *start_deal(void *que) {
             w_EnQueue(qWindow_gyo,resultOrientation[1]);
             w_EnQueue(qWindow_mag,resultOrientation[2]);
 
+            queueWindow_gyoDiff_avg = w_getAVG(qWindow_gyo);
+            queueWindow_mag_avg = w_getAVG(qWindow_mag);
 
             //测试单步长匀速路径
             Px += cos(Yaw * 3.1415926 / 180);
@@ -322,32 +347,8 @@ void *start_deal(void *que) {
             E += (lastVx / (cos(last_L) * (Rn + last_h))) * samplePeriod;
             h -= lastVz * samplePeriod;
 
-            last_L = L;
-            last_h = h;
-
-            if (data.SN < 4) {
-                printf("lost GPS..\nNow We are in INS Mode...................................session 3\n");
-                GPSOff = 1;
-                if(firstsetOffLocation == 1){
-                    L = lastGPSLattitude * deg2rad;
-                    E = lastGPSLongtitude * deg2rad;
-                    h = lastGPSh;
-                    firstsetOffLocation = 0;
-                }
-                if(GPSoffAddMod == 1){
-                    lastVx = lastGPSv * sin(sum_buf.slideGps_yaw * deg2rad) / 3.6;
-                    lastVy = lastGPSv * cos(sum_buf.slideGps_yaw * deg2rad) / 3.6;
-                }else if(GPSoffAddMod == 2){
-                    lastVx = lastGPSv * sin(resultOrientation[3] * deg2rad) / 3.6;
-                    lastVy = lastGPSv * cos(resultOrientation[3] * deg2rad) / 3.6;
-                }else if(GPSoffAddMod == 3){
-                    lastVx = lastGPSv * sin(Yaw * deg2rad) / 3.6;
-                    lastVy = lastGPSv * cos(Yaw * deg2rad) / 3.6;
-                }
-                L += (lastVy / (Rm + last_h)) * 0.2 * INS_drift_weight;
-                E += (lastVx / (cos(last_L) * (Rn + last_h))) * 0.2 * INS_drift_weight;
-
-            } else if (data.SN >= 4) {
+            //-------------------------------------------------------融合------------------------------------------------------------------------//
+            if (data.SN >= 4) {
                 firstsetOffLocation = 1;
                 if(count_itr++ == worksize){
                     firstGPSOff = 0;
@@ -368,14 +369,14 @@ void *start_deal(void *que) {
                     GPSOff = 0;
                 }
                 tao += samplePeriod;
-                double Dpv[6] = {L * rad2deg - GPSLattitude, E * rad2deg - GPSLongitude, h - GPSHeight, lastVx - speedE,
-                                 lastVy - speedN, lastVz - speedH};
+                double Dpv[6] = {L * rad2deg - GPSLattitude, E * rad2deg - GPSLongitude, h - GPSHeight, lastVx - GPSVe,
+                                 lastVy - GPSVn, lastVz - GPSVu};
                 double *XX = kalman_GPS_INS_pv(Dpv, lastVx, lastVy, lastVz, last_L, last_h, mahonyR, Fn, tao, Rm, Rn);
 
                 lastVx -= XX[3];
                 lastVy -= XX[4];
                 lastVz -= XX[5];
-                
+
                 L -= 0.29 * XX[6];
                 E -= 0.32 * XX[7];
                 h -= XX[8];
@@ -383,17 +384,98 @@ void *start_deal(void *que) {
                 lastGPSLongtitude = GPSLongitude;
                 lastGPSLattitude = GPSLattitude;
                 lastGPSh = GPSHeight;
-                lastGPSyaw = GPSYaw;
+                lastGPSyaw = smoothGPSYaw;
                 lastGPSv = GPSv;
 
                 double L_distance = fabs(L * rad2deg - GPSLattitude) * 111000;
                 double E_distance = fabs(E * rad2deg - GPSLongitude) * 111000 * cos(GPSLattitude);
-                double distance = sqrt(pow(L_distance,2) + pow(E_distance,2));
-                if(distance >= distace_GPS){
+                double distance1 = sqrt(pow(L_distance,2) + pow(E_distance,2));
+                double L_distance2 = fabs(lastGPSLattitude - GPSLattitude) * 111000;
+                double E_distance2 = fabs(lastGPSLongtitude - GPSLongitude) * 111000 * cos(GPSLattitude);
+                double distance2 = sqrt(pow(L_distance,2) + pow(E_distance,2));
+
+                if(distance1 >= distace_GPS && distance2 < 100){
                     L = GPSLattitude * deg2rad;
                     E = GPSLongitude * deg2rad;
                 }
+
+                //根据磁力航向和gps航向比较判断当前磁力是否有效
+                if (abs(queueWindow_mag_avg - smoothGPSYaw) < 20) {
+                    magGood = 1;//Turning模式
+                    doTurning = 1;
+                }
+                else{
+                    magGood = 0;//Mahony模式
+                    doTurning = 0;
+                }
+
             }
+            else if (data.SN < 4) {
+                //进行失效速度选择
+                if (ay * G0 > lastGPSv)
+                    usepVy = 1;
+                else
+                    usepVy = 0;
+                //进行失效模式判断
+                if (abs(queueWindow_gyoDiff_avg) < 0.5) {
+                    GPSoffAddMod = 1;
+                    INS_drift_weight = 1;
+                }
+                else if(magGood == 1) {
+                    GPSoffAddMod = 2;
+                    INS_drift_weight = 0.5;
+                }
+                else {
+                    GPSoffAddMod = 3;
+                    INS_drift_weight = 0.5;
+                }
+                printf("lost GPS..\nNow We are in INS Mode...................................session 3\n");
+
+                if(firstsetOffLocation == 1){
+                    printf("first set lost GPS location........................................session 3_1\n");
+                    L_off = lastGPSLattitude * deg2rad;
+                    E_off = lastGPSLongtitude * deg2rad;
+                    h_off = lastGPSh;
+                    firstsetOffLocation = 0;
+                }
+                if (usepVy == 0){
+                    if (GPSoffAddMod == 1) {
+                        lastVx = lastGPSv * sin(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                        lastVy = lastGPSv * cos(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                    }else if (GPSoffAddMod == 2){
+                        lastVx = lastGPSv * sin(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                        lastVy = lastGPSv * cos(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                    } else if(GPSoffAddMod == 3){
+                        lastVx = lastGPSv * sin(Yaw * 3.1415926 / 180) / 3.6;
+                        lastVy = lastGPSv * cos(Yaw * 3.1415926 / 180) / 3.6;
+                    }
+                }
+                else {
+                    if (GPSoffAddMod == 1) {
+                        lastVx = ay * G0 * sin(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                        lastVy = ay * G0 * cos(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                    }else if (GPSoffAddMod == 2){
+                        lastVx = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                        lastVy = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                    } else if(GPSoffAddMod == 3){
+                        lastVx = ay * G0 * sin(Yaw * 3.1415926 / 180) / 3.6;
+                        lastVy = ay * G0 * cos(Yaw * 3.1415926 / 180) / 3.6;
+                    }
+                }
+                L_off += (lastVy / (Rm + last_h)) * 0.2 * INS_drift_weight;
+                E_off += (lastVx / (cos(last_L) * (Rn + last_h))) * 0.2 * INS_drift_weight;
+                L = L_off;
+                E = E_off;
+                h = h_off;
+                printf("%d E = %f, L = %f, Vy = %f ,lastGPSv = %f, lastGPSyaw = %f\n",datacnt,E * rad2deg,L * rad2deg,ay * G0,lastGPSv/ 3.6,lastGPSyaw);
+                GPSOff = 1;
+
+            }
+
+            last_L = L;
+            last_h = h;
+            lastGz = gz;
+            
             fprintf(fresult, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
                     datacnt, Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], lastVx, lastVy, lastVz, E * rad2deg,
                     L * rad2deg, h);
