@@ -98,7 +98,7 @@ double* TurnningTest(double gyoX, double gyoY, double gyoZ, double magX, double 
     double calibratedMagOrientation = 720;
 
     if(initAngle == false){
-        if(fabs(gyrOrientation) > 20) {
+        if(fabs(gyrOrientationDiff) > 20) {
             free(initGyrMagList);
             initGyrMagList = (double*)malloc(sizeof(double));
             count_initGyrMagList = 0;
