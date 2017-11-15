@@ -76,7 +76,7 @@ int usepVy = 0;//是否使用惯导的速度
 int firstGPSOff = 0;
 int GPSOff = 0;
 int firstsetOffLocation = 1;
-int GPSoffAddMod = 2;//失效模式选择,1为gps估计策略,2为Turning策略,3为Mahony策略
+int GPSoffAddMod = 1;//失效模式选择,1为gps估计策略,2为Turning策略,3为Mahony策略
 int getGyrOrientation0 = 0;
 int firstSmooth = 0;
 int count_itr = 0;
@@ -913,425 +913,425 @@ double **getDatas(int size,char *openfile) {
     return datas;
 }
 
-//------------------------------main thread--------------------------------------------
-int main(int argc, char *argv[]) {
-    smoothRes = (double ***) malloc(sizeof(double **) * 4);
-    for (int i = 0; i < 4; i++) {
-        smoothRes[i] = (double **) malloc(sizeof(double *) * 3);
-        for (int j = 0; j < 3; j++)
-            smoothRes[i][j] = (double *) malloc(sizeof(double) * width);
-    }
-
-
-    int fd = 0;
-    mahonyR = (double *) malloc(sizeof(double) * 9);
-    Fn = (double *) malloc(sizeof(double) * 3);
-    pthread_t thread1, thread2;
-    pthread_mutex_t mutex;
-    fd = openUART(fd);
-    if (fd == -1)
-        return -1;
-    pthread_create(&thread1, NULL, start_deal, &queue);
-    collectSensorData(fd);
-    close(fd);
-    return 0;
-}
-
-////--------------------离线读文件测试-----------------------------------------------//
-//int main(int argc,char *argv[]){
+////------------------------------main thread--------------------------------------------
+//int main(int argc, char *argv[]) {
 //    smoothRes = (double ***) malloc(sizeof(double **) * 4);
 //    for (int i = 0; i < 4; i++) {
 //        smoothRes[i] = (double **) malloc(sizeof(double *) * 3);
 //        for (int j = 0; j < 3; j++)
 //            smoothRes[i][j] = (double *) malloc(sizeof(double) * width);
 //    }
+//
+//
+//    int fd = 0;
 //    mahonyR = (double *) malloc(sizeof(double) * 9);
 //    Fn = (double *) malloc(sizeof(double) * 3);
-//
-//    double accD0_x = 0, accD0_y = 0, accD0_z = 0;
-//    double magD0_x = 0, magD0_y = 0, magD0_z = 0;
-//    struct QueueWindow *qWindow_gyo = &queueWindow_gyo;
-//    struct QueueWindow *qWindow_mag = &queueWindow_mag;
-//    w_InitQueue(qWindow_gyo,qwindow_size);
-//    w_InitQueue(qWindow_mag,qwindow_size);
-//
-//    FILE *f_raw_data, *f_slide, *f_gps, *f_imu_a, *f_imu_v, *f_imu_p,*f_tokf,*f_kfresult,*fresult;
-//
-//    f_raw_data = fopen("raw_data.csv", "w");
-//    f_slide = fopen("smoothdata.csv", "w");
-//    f_gps = fopen("gps.csv", "w");
-//    f_imu_a = fopen("imu_fn.csv", "w");
-//    f_imu_v = fopen("imu_velocity_ENU.csv", "w");
-//    f_imu_p = fopen("imu_position_ENU.csv", "w");
-//    fresult = fopen("result.csv", "w");
-////    fresult = fopen("8.28离线结果Turning.csv", "w");
-//    char *openfile = "8.28滑动滤波输入的副本.csv";
-//    int size = 20;
-//    double **datas = getDatas(size,openfile);
-//
-//    double *getdata = (double*)malloc(sizeof(double) * size);
-//    struct Data data;
-//    for (int k = 0; k < count ; k++) {
-//
-//        getdata = datas[datacnt - 1];
-//
-//        data.acc_x = -(getdata[0] - accCalStc_X);
-//        data.acc_y = -(getdata[1] - accCalStc_Y);
-//        data.acc_z = -(getdata[2] - accCalStc_Z);
-//        data.gyo_x = getdata[3];
-//        data.gyo_y = getdata[4];
-//        data.gyo_z = getdata[5];
-//        data.m_x = getdata[6];
-//        data.m_y = getdata[7];
-//        data.m_z = -getdata[8];
-//
-//        data.Longitude = getdata[14];
-//        data.Lattitude = getdata[15];
-//        data.Height = getdata[16];
-//        data.Yaw = getdata[17];
-//        data.GPSV = getdata[18];
-//        data.SN = getdata[19];
-//
-//        double ax = -(data.acc_x - accCalStc_X);
-//        double ay = -(data.acc_y - accCalStc_Y);
-//        double az = -(data.acc_z - accCalStc_Z);
-//        double gx = data.gyo_x;
-//        double gy = data.gyo_y;
-//        double gz = data.gyo_z;
-//        double mx = data.m_x;
-//        double my = data.m_y;
-//        double mz = -data.m_z;
-//        double mx_Turning = data.m_x;
-//        double my_Turning = data.m_y;
-//        double mz_Turning = data.m_z;
-//
-//        double GPSLongitude = data.Longitude;
-//        double GPSLattitude = data.Lattitude;
-//        double GPSHeight = data.Height;
-//        double GPSYaw = data.Yaw;
-//        double GPSv = data.GPSV;
-//
-//        if (firstGPSOff == 0) {
-//            if (data.SN < 4) {
-//                printf("Please wait until GPS is working..\r\n%f\r\n\r\n", accCalStc_Z);
-//                continue;
-//            } else if (data.Lattitude != 0) {
-//                //第一次接收到GPS信号，确定起点经纬度，或者是GPS信号丢失后重新获取，然后重新设置起点
-//                write_raw_gps(data, f_gps);
-//
-//                lastGPSLongtitude = GPSLongitude;
-//                lastGPSLattitude = GPSLattitude;
-//                lastGPSh = GPSHeight;
-//                lastGPSyaw = GPSYaw;
-//                lastGPSv = GPSv;
-//
-//                last_E = GPSLongitude / rad2deg;
-//                last_L = GPSLattitude / rad2deg;
-//                last_h = GPSHeight;
-//
-//                E = last_E;
-//                L = last_L;
-//                h = last_h;
-//
-//                E_off = last_E;
-//                L_off = last_L;
-//                h_off = last_h;
-//
-//                printf("Now we set the GPS first location: E:%.5f L:%.5f...............session 0\n", last_E * rad2deg,
-//                       last_L * rad2deg);
-//                firstGPSOff = 1;
-//                datacnt++;
-//
-//                accD0_x = ax;
-//                accD0_y = ay;
-//                accD0_z = az;
-//                magD0_x = mx;
-//                magD0_y = my;
-//                magD0_z = mz;
-//
-//                pitch0 = atan2(-accD0_y, -accD0_z);
-//                roll0 = atan2(accD0_x, -accD0_z);
-//                yaw0 = atan2(-magD0_y * cos(roll0) + magD0_z * sin(roll0),
-//                             magD0_x * cos(pitch0) + magD0_y * sin(pitch0) * sin(roll0) -
-//                             magD0_z * sin(pitch0) * cos(roll0));
-//
-////                pitch0 = pitch0 * rad2deg;
-////                roll0 = roll0 * rad2deg;
-////                yaw0 = -yaw0 * rad2deg;
-//
-//                Q0 = euarToQuaternion(yaw0, pitch0, roll0);
-//                q0 = Q0.q1;
-//                q1 = Q0.q2;
-//                q2 = Q0.q3;
-//                q3 = Q0.q4;
-//                //将第一组四元数传入到mahony更新方法里并设置好初始的旋转矩阵
-//                quaternionToMahonyR(Q0);
-//            }
-//        } else if (firstGPSOff == 1) {
-//            write_raw_data(data, f_raw_data);
-//            slideFilter(data);
-//            write_slidefit_data(sum_buf, f_slide);
-//
-//            GPSVn = sum_buf.slideGps_v * cos(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
-//            GPSVe = sum_buf.slideGps_v * sin(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
-//            GPSVu = data.Height - last_h;//GPS速度
-//            smoothGPSYaw = sum_buf.slideGps_yaw;
-//
-//            //更新四元数
-//            MahonyAHRSupdate((float) (gx / rad2deg), (float) (gy / rad2deg), (float) (gz / rad2deg),
-//                             (float)ax, (float)ay, (float)az,
-//                             (float)mx, (float)my, (float)mz);
-//            Yaw = -atan2(2 * q1 * q2 + 2 * q0 * q3, 2 * q0 * q0 + 2 * q0 * q2 - 1) * rad2deg;
-//            Pitch = asin(2 * q2 * q3 + 2 * q0 * q1) * rad2deg;
-//            Roll = -atan2(2 * q1 * q3 + 2 * q0 * q2, 2 * q0 * q0 + 2 * q3 * q3 - 1) * rad2deg;
-//            //更新旋转矩阵
-//            setMahonyR();
-//
-//            double *resultOrientation = TurnningTest(gx, gy, gz, mx_Turning, my_Turning, mz_Turning);
-//            resultOrientation[2] = 90 - resultOrientation[2];
-//            resultOrientation[3] = 90 - resultOrientation[3];
-//            magOrientation = resultOrientation[3];
-//            stepP[0] += sin(resultOrientation[3] * 3.1415926 / 180);
-//            stepP[1] += cos(resultOrientation[3] * 3.1415926 / 180);
-//            gyoP[0] += sin(resultOrientation[0] * 3.1415926 / 180);
-//            gyoP[1] += cos(resultOrientation[0] * 3.1415926 / 180);
-//            magP[0] += sin(resultOrientation[2] * 3.1415926 / 180);
-//            magP[1] += cos(resultOrientation[2] * 3.1415926 / 180);
-//
-//            //计算间隔内的陀螺仪绕z轴的方向增量
-//            gyrOrienDiff = (gx + lastGz) * samplePeriod * 0.5;
-//            gyrOrienDiff = -gyrOrienDiff;
-//            //获得初始的陀螺仪方向
-//            if(getGyrOrientation0 == 0){
-//                gyrOrientation = magOrientation;
-//                getGyrOrientation0 = 1;
-//                gyrOrientation += gyrOrienDiff;
-//            }else{
-//                gyrOrientation += gyrOrienDiff;
-//            }
-//
-//            if(w_isFull(qWindow_gyo))
-//                w_DeQueue(qWindow_gyo);
-//            if(w_isFull(qWindow_mag))
-//                w_DeQueue(qWindow_mag);
-//            w_EnQueue(qWindow_gyo,gyrOrientation);
-//            w_EnQueue(qWindow_mag,magOrientation);
-//
-//            queueWindow_gyo_avg = w_getAVG(qWindow_gyo);
-//            queueWindow_mag_avg = w_getAVG(qWindow_mag);
-//
-//            //测试单步长匀速路径
-//            Px += cos(Yaw * 3.1415926 / 180);
-//            Py += sin(Yaw * 3.1415926 / 180);
-//
-//            //计算更新的子午曲率半径Rm和卯酉曲率半径Rn以及曲率平均半径R0
-//            Rm = earthRe * (1 - 2 * earthf + 3 * earthf * sin(last_L) * sin(last_L));
-//            Rn = earthRe * (1 + earthf * sin(last_L) * sin(last_L));
-//            R0 = sqrt(Rm * Rm + Rn * Rn);
-//
-//            //旋转加速度到东北天导航坐标系进而计算绝对速度微分Vccq
-////            accToFn(data.acc_x - accCalStc_X, data.acc_y - accCalStc_Y, data.acc_z - accCalStc_Z);
-//            accToFn(sum_buf.slideAcc_x, sum_buf.slideAcc_y, sum_buf.slideAcc_z);
-//            Fn = MatMulk(Fn, 3, 1, G0);
-//            Vccq[0] = -Fn[0];
-//            Vccq[1] = Fn[1];
-//            Vccq[2] = Fn[2] + G0;
-//            if(doTurning == 1){
-//                Vccq[0] = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180);
-//                Vccq[1] = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180);
-//            }
-//
-//            lastVx += Vccq[0] * samplePeriod;
-//            lastVy += Vccq[1] * samplePeriod;
-//            lastVz += Vccq[2] * samplePeriod;
-//
-//            L += (lastVy / (Rm + last_h)) * samplePeriod;
-//            E += (lastVx / (cos(last_L) * (Rn + last_h))) * samplePeriod;
-//            h -= lastVz * samplePeriod;
-//
-//            //-------------------------------------------------------融合------------------------------------------------------------------------//
-//            if (data.SN >= 4) {
-//                firstsetOffLocation = 1;
-//                if(count_itr++ == worksize){
-//                    lastGPSh = GPSHeight;
-//                    h = lastGPSh;
-//                    E = GPSLongitude * 3.1415926 / 180;
-//                    L = GPSLattitude * 3.1415926 / 180;
-//
-//                    accD0_x = ax;
-//                    accD0_y = ay;
-//                    accD0_z = az;
-//                    magD0_x = mx;
-//                    magD0_y = my;
-//                    magD0_z = mz;
-//
-//                    pitch0 = atan2(-accD0_y, -accD0_z);
-//                    roll0 = atan2(accD0_x, -accD0_z);
-//                    yaw0 = atan2(-magD0_y * cos(roll0) + magD0_z * sin(roll0),
-//                                 magD0_x * cos(pitch0) + magD0_y * sin(pitch0) * sin(roll0) -
-//                                 magD0_z * sin(pitch0) * cos(roll0));
-//                    Q0 = euarToQuaternion(yaw0, pitch0, roll0);
-//                    //将第一组四元数传入到mahony更新方法里并设置好初始的旋转矩阵
-//                    q0 = Q0.q1;
-//                    q1 = Q0.q2;
-//                    q2 = Q0.q3;
-//                    q3 = Q0.q4;
-//                    datacnt++;
-//                    tao = 0;
-//                    setNULL();
-//                    count_itr = 0;
-//                    continue;
-//                }
-//                //gps/ins mode
-//                write_raw_gps(data, f_gps);
-//                //printf("Now we are in the GPS/INS mode...........................................session 2\n");
-//                //初速度设置
-//                if (GPSOff == 1) {
-//                    E = GPSLongitude / rad2deg;
-//                    L = GPSLattitude / rad2deg;
-//                    h = GPSHeight;
-//                    printf("Now we are setting the GPS location again after GPS lost...........................................session 2_1\n");
-//                    GPSOff = 0;
-//                }
-//                tao += samplePeriod;
-//                double Dpv[6] = {L * rad2deg - GPSLattitude, E * rad2deg - GPSLongitude, h - GPSHeight, lastVx - GPSVe,
-//                                 lastVy - GPSVn, lastVz - GPSVu};
-//                double *XX = kalman_GPS_INS_pv(Dpv, lastVx, lastVy, lastVz, last_L, last_h, mahonyR, Fn, tao, Rm, Rn);
-//
-//                lastVx -= XX[3];
-//                lastVy -= XX[4];
-//                lastVz -= XX[5];
-//
-//                L -= 0.29 * XX[6];
-//                E -= 0.32 * XX[7];
-//                h -= XX[8];
-//
-//                lastGPSLongtitude = GPSLongitude;
-//                lastGPSLattitude = GPSLattitude;
-//                lastGPSh = GPSHeight;
-//                lastGPSyaw = smoothGPSYaw;
-//                lastGPSv = GPSv;
-//                tempVz = lastVz;
-//
-//                double L_distance = fabs(L * rad2deg - GPSLattitude) * 111000;
-//                double E_distance = fabs(E * rad2deg - GPSLongitude) * 111000 * cos(GPSLattitude);
-//                double distance1 = sqrt(pow(L_distance,2) + pow(E_distance,2));
-//                double L_distance2 = fabs(lastGPSLattitude - GPSLattitude) * 111000;
-//                double E_distance2 = fabs(lastGPSLongtitude - GPSLongitude) * 111000 * cos(GPSLattitude);
-//                double distance2 = sqrt(pow(L_distance,2) + pow(E_distance,2));
-//
-//                if(distance1 >= distace_GPS && distance2 < 100){
-//                    L = GPSLattitude * deg2rad;
-//                    E = GPSLongitude * deg2rad;
-//                }
-//
-//                //根据磁力航向和gps航向比较判断当前磁力是否有效
-//                if (fabs(queueWindow_mag_avg - smoothGPSYaw) < 50) {
-//                    magGood = 1;//Turning模式
-//                    doTurning = 1;
-//                }
-//                else{
-//                    magGood = 0;//Mahony模式
-//                    doTurning = 0;
-//                }
-//
-//            }
-//            else if (data.SN < 4) {
-//                //进行失效速度选择
-//                if (ay * G0 > lastGPSv) {
-//                    usepVy = 1;
-//
-//                }
-//                else {
-//                    usepVy = 0;
-//                    INS_drift_weight = 1;
-//
-//                }
-//                //进行失效模式判断
-//                if (fabs(queueWindow_gyo_avg) < 25) {
-//                    GPSoffAddMod = 1;
-//                    INS_drift_weight = 1;
-//                }
-//                else if(magGood == 1) {
-//                    GPSoffAddMod = 2;
-//                    lastGPSyaw = resultOrientation[3];
-//                    INS_drift_weight = 0.5;
-//                }
-//                else {
-//                    GPSoffAddMod = 3;
-//                    lastGPSyaw = Yaw;
-//                }
-//                //printf("lost GPS..\nNow We are in INS Mode...................................session 3\n");
-//                if(firstsetOffLocation == 1){
-//                    printf("first set lost GPS location........................................session 3_1\n");
-//                    L_off = lastGPSLattitude * deg2rad;
-//                    E_off = lastGPSLongtitude * deg2rad;
-//                    h_off = lastGPSh;
-//
-//                    firstsetOffLocation = 0;
-//                }
-//                if (usepVy == 0){
-//                    if (GPSoffAddMod == 1) {
-//                        lastVx = lastGPSv * sin(lastGPSyaw * 3.1415926 / 180) / 3.6;
-//                        lastVy = lastGPSv * cos(lastGPSyaw * 3.1415926 / 180) / 3.6;
-//                    }else if (GPSoffAddMod == 2){
-//                        lastVx = lastGPSv * sin(resultOrientation[3] * 3.1415926 / 180) / 3.6;
-//                        lastVy = lastGPSv * cos(resultOrientation[3] * 3.1415926 / 180) / 3.6;
-//
-//                    } else if(GPSoffAddMod == 3){
-//                        lastVx = lastGPSv * sin(Yaw * 3.1415926 / 180) / 3.6;
-//                        lastVy = lastGPSv * cos(Yaw * 3.1415926 / 180) / 3.6;
-//
-//                    }
-//                }
-//                else {
-//                    if (GPSoffAddMod == 1) {
-//                        lastVx = ay * G0 * sin(lastGPSyaw * 3.1415926 / 180) / 3.6;
-//                        lastVy = ay * G0 * cos(lastGPSyaw * 3.1415926 / 180) / 3.6;
-//                    }else if (GPSoffAddMod == 2){
-//                        lastVx = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180) / 3.6;
-//                        lastVy = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180) / 3.6;
-//                    } else if(GPSoffAddMod == 3){
-//                        lastVx = ay * G0 * sin(Yaw * 3.1415926 / 180) / 3.6;
-//                        lastVy = ay * G0 * cos(Yaw * 3.1415926 / 180) / 3.6;
-//                    }
-//                }
-//                L_off += (lastVy / (Rm + last_h)) * 0.2 * INS_drift_weight;
-//                E_off += (lastVx / (cos(last_L) * (Rn + last_h))) * 0.2 * INS_drift_weight;
-//                L = L_off;
-//                E = E_off;
-//                h = h_off;
-//                lastVz = tempVz;
-//                printf("%d E = %f, L = %f, Vy = %f ,lastGPSv = %f, lastGPSyaw = %f\n",datacnt,E * rad2deg,L * rad2deg,ay * G0,lastGPSv/ 3.6,lastGPSyaw);
-//                GPSOff = 1;
-//
-//            }
-//
-//            last_L = L;
-//            last_h = h;
-//            lastGz = gz;
-//
-//            fprintf(fresult, "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,"
-//                            "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d\n",
-//                    smoothGPSYaw,Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], lastVx, lastVy, lastVz, E * rad2deg,
-//                    L * rad2deg, h,resultOrientation[0],resultOrientation[1],resultOrientation[2],resultOrientation[3],
-//                    stepP[0],stepP[1],lastGPSLattitude,lastGPSyaw,queueWindow_mag_avg,queueWindow_gyo_avg,datacnt);
-//            fprintf(f_imu_a, "%d,%f,%f,%f\n", datacnt, Vccq[0], Vccq[1], Vccq[2]);
-//            fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, lastVx, lastVy, lastVz);
-//            fprintf(f_imu_p, "%d,%f,%f,%f\n", datacnt, E * rad2deg, L * rad2deg, h);
-//            datacnt++;
-//            sum_buf.slideAcc_x = 0;
-//            sum_buf.slideAcc_y = 0;
-//            sum_buf.slideAcc_z = 0;
-//            sum_buf.slideGyo_x = 0;
-//            sum_buf.slideGyo_y = 0;
-//            sum_buf.slideGyo_z = 0;
-//            sum_buf.slideMag_x = 0;
-//            sum_buf.slideMag_y = 0;
-//            sum_buf.slideMag_z = 0;
-//            sum_buf.slideGps_yaw = 0;
-//            sum_buf.slideGps_v = 0;
-//        }
-//    }
-//    fclose(fresult);
+//    pthread_t thread1, thread2;
+//    pthread_mutex_t mutex;
+//    fd = openUART(fd);
+//    if (fd == -1)
+//        return -1;
+//    pthread_create(&thread1, NULL, start_deal, &queue);
+//    collectSensorData(fd);
+//    close(fd);
+//    return 0;
 //}
+
+//--------------------离线读文件测试-----------------------------------------------//
+int main(int argc,char *argv[]){
+    smoothRes = (double ***) malloc(sizeof(double **) * 4);
+    for (int i = 0; i < 4; i++) {
+        smoothRes[i] = (double **) malloc(sizeof(double *) * 3);
+        for (int j = 0; j < 3; j++)
+            smoothRes[i][j] = (double *) malloc(sizeof(double) * width);
+    }
+    mahonyR = (double *) malloc(sizeof(double) * 9);
+    Fn = (double *) malloc(sizeof(double) * 3);
+
+    double accD0_x = 0, accD0_y = 0, accD0_z = 0;
+    double magD0_x = 0, magD0_y = 0, magD0_z = 0;
+    struct QueueWindow *qWindow_gyo = &queueWindow_gyo;
+    struct QueueWindow *qWindow_mag = &queueWindow_mag;
+    w_InitQueue(qWindow_gyo,qwindow_size);
+    w_InitQueue(qWindow_mag,qwindow_size);
+
+    FILE *f_raw_data, *f_slide, *f_gps, *f_imu_a, *f_imu_v, *f_imu_p,*f_tokf,*f_kfresult,*fresult;
+
+    f_raw_data = fopen("raw_data.csv", "w");
+    f_slide = fopen("smoothdata.csv", "w");
+    f_gps = fopen("gps.csv", "w");
+    f_imu_a = fopen("imu_fn.csv", "w");
+    f_imu_v = fopen("imu_velocity_ENU.csv", "w");
+    f_imu_p = fopen("imu_position_ENU.csv", "w");
+    fresult = fopen("result.csv", "w");
+//    fresult = fopen("8.28离线结果Turning.csv", "w");
+    char *openfile = "8.28滑动滤波输入的副本.csv";
+    int size = 20;
+    double **datas = getDatas(size,openfile);
+
+    double *getdata = (double*)malloc(sizeof(double) * size);
+    struct Data data;
+    for (int k = 0; k < count ; k++) {
+
+        getdata = datas[datacnt - 1];
+
+        data.acc_x = -(getdata[0] - accCalStc_X);
+        data.acc_y = -(getdata[1] - accCalStc_Y);
+        data.acc_z = -(getdata[2] - accCalStc_Z);
+        data.gyo_x = getdata[3];
+        data.gyo_y = getdata[4];
+        data.gyo_z = getdata[5];
+        data.m_x = getdata[6];
+        data.m_y = getdata[7];
+        data.m_z = -getdata[8];
+
+        data.Longitude = getdata[14];
+        data.Lattitude = getdata[15];
+        data.Height = getdata[16];
+        data.Yaw = getdata[17];
+        data.GPSV = getdata[18];
+        data.SN = getdata[19];
+
+        double ax = -(data.acc_x - accCalStc_X);
+        double ay = -(data.acc_y - accCalStc_Y);
+        double az = -(data.acc_z - accCalStc_Z);
+        double gx = data.gyo_x;
+        double gy = data.gyo_y;
+        double gz = data.gyo_z;
+        double mx = data.m_x;
+        double my = data.m_y;
+        double mz = -data.m_z;
+        double mx_Turning = data.m_x;
+        double my_Turning = data.m_y;
+        double mz_Turning = data.m_z;
+
+        double GPSLongitude = data.Longitude;
+        double GPSLattitude = data.Lattitude;
+        double GPSHeight = data.Height;
+        double GPSYaw = data.Yaw;
+        double GPSv = data.GPSV;
+
+        if (firstGPSOff == 0) {
+            if (data.SN < 4) {
+                printf("Please wait until GPS is working..\r\n%f\r\n\r\n", accCalStc_Z);
+                continue;
+            } else if (data.Lattitude != 0) {
+                //第一次接收到GPS信号，确定起点经纬度，或者是GPS信号丢失后重新获取，然后重新设置起点
+                write_raw_gps(data, f_gps);
+
+                lastGPSLongtitude = GPSLongitude;
+                lastGPSLattitude = GPSLattitude;
+                lastGPSh = GPSHeight;
+                lastGPSyaw = GPSYaw;
+                lastGPSv = GPSv;
+
+                last_E = GPSLongitude / rad2deg;
+                last_L = GPSLattitude / rad2deg;
+                last_h = GPSHeight;
+
+                E = last_E;
+                L = last_L;
+                h = last_h;
+
+                E_off = last_E;
+                L_off = last_L;
+                h_off = last_h;
+
+                printf("Now we set the GPS first location: E:%.5f L:%.5f...............session 0\n", last_E * rad2deg,
+                       last_L * rad2deg);
+                firstGPSOff = 1;
+                datacnt++;
+
+                accD0_x = ax;
+                accD0_y = ay;
+                accD0_z = az;
+                magD0_x = mx;
+                magD0_y = my;
+                magD0_z = mz;
+
+                pitch0 = atan2(-accD0_y, -accD0_z);
+                roll0 = atan2(accD0_x, -accD0_z);
+                yaw0 = atan2(-magD0_y * cos(roll0) + magD0_z * sin(roll0),
+                             magD0_x * cos(pitch0) + magD0_y * sin(pitch0) * sin(roll0) -
+                             magD0_z * sin(pitch0) * cos(roll0));
+
+//                pitch0 = pitch0 * rad2deg;
+//                roll0 = roll0 * rad2deg;
+//                yaw0 = -yaw0 * rad2deg;
+
+                Q0 = euarToQuaternion(yaw0, pitch0, roll0);
+                q0 = Q0.q1;
+                q1 = Q0.q2;
+                q2 = Q0.q3;
+                q3 = Q0.q4;
+                //将第一组四元数传入到mahony更新方法里并设置好初始的旋转矩阵
+                quaternionToMahonyR(Q0);
+            }
+        } else if (firstGPSOff == 1) {
+            write_raw_data(data, f_raw_data);
+            slideFilter(data);
+            write_slidefit_data(sum_buf, f_slide);
+
+            GPSVn = sum_buf.slideGps_v * cos(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
+            GPSVe = sum_buf.slideGps_v * sin(sum_buf.slideGps_yaw * 3.1415926 / 180) / 3.6;
+            GPSVu = data.Height - last_h;//GPS速度
+            smoothGPSYaw = sum_buf.slideGps_yaw;
+
+            //更新四元数
+            MahonyAHRSupdate((float) (gx / rad2deg), (float) (gy / rad2deg), (float) (gz / rad2deg),
+                             (float)ax, (float)ay, (float)az,
+                             (float)mx, (float)my, (float)mz);
+            Yaw = -atan2(2 * q1 * q2 + 2 * q0 * q3, 2 * q0 * q0 + 2 * q0 * q2 - 1) * rad2deg;
+            Pitch = asin(2 * q2 * q3 + 2 * q0 * q1) * rad2deg;
+            Roll = -atan2(2 * q1 * q3 + 2 * q0 * q2, 2 * q0 * q0 + 2 * q3 * q3 - 1) * rad2deg;
+            //更新旋转矩阵
+            setMahonyR();
+
+            double *resultOrientation = TurnningTest(gx, gy, gz, mx_Turning, my_Turning, mz_Turning);
+            resultOrientation[2] = 90 - resultOrientation[2];
+            resultOrientation[3] = 90 - resultOrientation[3];
+            magOrientation = resultOrientation[3];
+            stepP[0] += sin(resultOrientation[3] * 3.1415926 / 180);
+            stepP[1] += cos(resultOrientation[3] * 3.1415926 / 180);
+            gyoP[0] += sin(resultOrientation[0] * 3.1415926 / 180);
+            gyoP[1] += cos(resultOrientation[0] * 3.1415926 / 180);
+            magP[0] += sin(resultOrientation[2] * 3.1415926 / 180);
+            magP[1] += cos(resultOrientation[2] * 3.1415926 / 180);
+
+            //计算间隔内的陀螺仪绕z轴的方向增量
+            gyrOrienDiff = (gx + lastGz) * samplePeriod * 0.5;
+            gyrOrienDiff = -gyrOrienDiff;
+            //获得初始的陀螺仪方向
+            if(getGyrOrientation0 == 0){
+                gyrOrientation = magOrientation;
+                getGyrOrientation0 = 1;
+                gyrOrientation += gyrOrienDiff;
+            }else{
+                gyrOrientation += gyrOrienDiff;
+            }
+
+            if(w_isFull(qWindow_gyo))
+                w_DeQueue(qWindow_gyo);
+            if(w_isFull(qWindow_mag))
+                w_DeQueue(qWindow_mag);
+            w_EnQueue(qWindow_gyo,gyrOrientation);
+            w_EnQueue(qWindow_mag,magOrientation);
+
+            queueWindow_gyo_avg = w_getAVG(qWindow_gyo);
+            queueWindow_mag_avg = w_getAVG(qWindow_mag);
+
+            //测试单步长匀速路径
+            Px += cos(Yaw * 3.1415926 / 180);
+            Py += sin(Yaw * 3.1415926 / 180);
+
+            //计算更新的子午曲率半径Rm和卯酉曲率半径Rn以及曲率平均半径R0
+            Rm = earthRe * (1 - 2 * earthf + 3 * earthf * sin(last_L) * sin(last_L));
+            Rn = earthRe * (1 + earthf * sin(last_L) * sin(last_L));
+            R0 = sqrt(Rm * Rm + Rn * Rn);
+
+            //旋转加速度到东北天导航坐标系进而计算绝对速度微分Vccq
+//            accToFn(data.acc_x - accCalStc_X, data.acc_y - accCalStc_Y, data.acc_z - accCalStc_Z);
+            accToFn(sum_buf.slideAcc_x, sum_buf.slideAcc_y, sum_buf.slideAcc_z);
+            Fn = MatMulk(Fn, 3, 1, G0);
+            Vccq[0] = -Fn[0];
+            Vccq[1] = Fn[1];
+            Vccq[2] = Fn[2] + G0;
+            if(doTurning == 1){
+                Vccq[0] = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180);
+                Vccq[1] = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180);
+            }
+
+            lastVx += Vccq[0] * samplePeriod;
+            lastVy += Vccq[1] * samplePeriod;
+            lastVz += Vccq[2] * samplePeriod;
+
+            L += (lastVy / (Rm + last_h)) * samplePeriod;
+            E += (lastVx / (cos(last_L) * (Rn + last_h))) * samplePeriod;
+            h -= lastVz * samplePeriod;
+
+            //-------------------------------------------------------融合------------------------------------------------------------------------//
+            if (data.SN >= 4) {
+                firstsetOffLocation = 1;
+                if(count_itr++ == worksize){
+                    lastGPSh = GPSHeight;
+                    h = lastGPSh;
+                    E = GPSLongitude * 3.1415926 / 180;
+                    L = GPSLattitude * 3.1415926 / 180;
+
+                    accD0_x = ax;
+                    accD0_y = ay;
+                    accD0_z = az;
+                    magD0_x = mx;
+                    magD0_y = my;
+                    magD0_z = mz;
+
+                    pitch0 = atan2(-accD0_y, -accD0_z);
+                    roll0 = atan2(accD0_x, -accD0_z);
+                    yaw0 = atan2(-magD0_y * cos(roll0) + magD0_z * sin(roll0),
+                                 magD0_x * cos(pitch0) + magD0_y * sin(pitch0) * sin(roll0) -
+                                 magD0_z * sin(pitch0) * cos(roll0));
+                    Q0 = euarToQuaternion(yaw0, pitch0, roll0);
+                    //将第一组四元数传入到mahony更新方法里并设置好初始的旋转矩阵
+                    q0 = Q0.q1;
+                    q1 = Q0.q2;
+                    q2 = Q0.q3;
+                    q3 = Q0.q4;
+                    datacnt++;
+                    tao = 0;
+                    setNULL();
+                    count_itr = 0;
+                    continue;
+                }
+                //gps/ins mode
+                write_raw_gps(data, f_gps);
+                //printf("Now we are in the GPS/INS mode...........................................session 2\n");
+                //初速度设置
+                if (GPSOff == 1) {
+                    E = GPSLongitude / rad2deg;
+                    L = GPSLattitude / rad2deg;
+                    h = GPSHeight;
+                    printf("Now we are setting the GPS location again after GPS lost...........................................session 2_1\n");
+                    GPSOff = 0;
+                }
+                tao += samplePeriod;
+                double Dpv[6] = {L * rad2deg - GPSLattitude, E * rad2deg - GPSLongitude, h - GPSHeight, lastVx - GPSVe,
+                                 lastVy - GPSVn, lastVz - GPSVu};
+                double *XX = kalman_GPS_INS_pv(Dpv, lastVx, lastVy, lastVz, last_L, last_h, mahonyR, Fn, tao, Rm, Rn);
+
+                lastVx -= XX[3];
+                lastVy -= XX[4];
+                lastVz -= XX[5];
+
+                L -= 0.29 * XX[6];
+                E -= 0.32 * XX[7];
+                h -= XX[8];
+
+                lastGPSLongtitude = GPSLongitude;
+                lastGPSLattitude = GPSLattitude;
+                lastGPSh = GPSHeight;
+                lastGPSyaw = smoothGPSYaw;
+                lastGPSv = GPSv;
+                tempVz = lastVz;
+
+                double L_distance = fabs(L * rad2deg - GPSLattitude) * 111000;
+                double E_distance = fabs(E * rad2deg - GPSLongitude) * 111000 * cos(GPSLattitude);
+                double distance1 = sqrt(pow(L_distance,2) + pow(E_distance,2));
+                double L_distance2 = fabs(lastGPSLattitude - GPSLattitude) * 111000;
+                double E_distance2 = fabs(lastGPSLongtitude - GPSLongitude) * 111000 * cos(GPSLattitude);
+                double distance2 = sqrt(pow(L_distance,2) + pow(E_distance,2));
+
+                if(distance1 >= distace_GPS && distance2 < 100){
+                    L = GPSLattitude * deg2rad;
+                    E = GPSLongitude * deg2rad;
+                }
+
+                //根据磁力航向和gps航向比较判断当前磁力是否有效
+                if (fabs(queueWindow_mag_avg - smoothGPSYaw) < 50) {
+                    magGood = 1;//Turning模式
+                    doTurning = 1;
+                }
+                else{
+                    magGood = 0;//Mahony模式
+                    doTurning = 0;
+                }
+
+            }
+            else if (data.SN < 4) {
+                //进行失效速度选择
+                if (ay * G0 > lastGPSv) {
+                    usepVy = 1;
+                    INS_drift_weight = 0.5;
+                }
+                else {
+                    usepVy = 0;
+                    INS_drift_weight = 1;
+
+                }
+                //进行失效模式判断
+                if (fabs(queueWindow_gyo_avg) < 50) {
+                    GPSoffAddMod = 1;
+                    INS_drift_weight = 1;
+                }
+                else if(magGood == 1) {
+                    GPSoffAddMod = 2;
+                    lastGPSyaw = resultOrientation[3];
+                    INS_drift_weight = 0.5;
+                }
+                else {
+                    GPSoffAddMod = 3;
+                    lastGPSyaw = Yaw;
+                }
+                //printf("lost GPS..\nNow We are in INS Mode...................................session 3\n");
+                if(firstsetOffLocation == 1){
+                    printf("first set lost GPS location........................................session 3_1\n");
+                    L_off = lastGPSLattitude * deg2rad;
+                    E_off = lastGPSLongtitude * deg2rad;
+                    h_off = lastGPSh;
+
+                    firstsetOffLocation = 0;
+                }
+                if (usepVy == 0){
+                    if (GPSoffAddMod == 1) {
+                        lastVx = lastGPSv * sin(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                        lastVy = lastGPSv * cos(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                    }else if (GPSoffAddMod == 2){
+                        lastVx = lastGPSv * sin(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                        lastVy = lastGPSv * cos(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+
+                    } else if(GPSoffAddMod == 3){
+                        lastVx = lastGPSv * sin(Yaw * 3.1415926 / 180) / 3.6;
+                        lastVy = lastGPSv * cos(Yaw * 3.1415926 / 180) / 3.6;
+
+                    }
+                }
+                else {
+                    if (GPSoffAddMod == 1) {
+                        lastVx = ay * G0 * sin(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                        lastVy = ay * G0 * cos(lastGPSyaw * 3.1415926 / 180) / 3.6;
+                    }else if (GPSoffAddMod == 2){
+                        lastVx = ay * G0 * sin(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                        lastVy = ay * G0 * cos(resultOrientation[3] * 3.1415926 / 180) / 3.6;
+                    } else if(GPSoffAddMod == 3){
+                        lastVx = ay * G0 * sin(Yaw * 3.1415926 / 180) / 3.6;
+                        lastVy = ay * G0 * cos(Yaw * 3.1415926 / 180) / 3.6;
+                    }
+                }
+                L_off += (lastVy / (Rm + last_h)) * 0.2 * INS_drift_weight;
+                E_off += (lastVx / (cos(last_L) * (Rn + last_h))) * 0.2 * INS_drift_weight;
+                L = L_off;
+                E = E_off;
+                h = h_off;
+                lastVz = tempVz;
+                printf("%d E = %f, L = %f, Vy = %f ,lastGPSv = %f, lastGPSyaw = %f\n",datacnt,E * rad2deg,L * rad2deg,ay * G0,lastGPSv/ 3.6,lastGPSyaw);
+                GPSOff = 1;
+
+            }
+
+            last_L = L;
+            last_h = h;
+            lastGz = gz;
+
+            fprintf(fresult, "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,"
+                            "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d\n",
+                    smoothGPSYaw,Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], lastVx, lastVy, lastVz, E * rad2deg,
+                    L * rad2deg, h,resultOrientation[0],resultOrientation[1],resultOrientation[2],resultOrientation[3],
+                    stepP[0],stepP[1],lastGPSLattitude,lastGPSyaw,queueWindow_mag_avg,queueWindow_gyo_avg,datacnt);
+            fprintf(f_imu_a, "%d,%f,%f,%f\n", datacnt, Vccq[0], Vccq[1], Vccq[2]);
+            fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, lastVx, lastVy, lastVz);
+            fprintf(f_imu_p, "%d,%f,%f,%f\n", datacnt, E * rad2deg, L * rad2deg, h);
+            datacnt++;
+            sum_buf.slideAcc_x = 0;
+            sum_buf.slideAcc_y = 0;
+            sum_buf.slideAcc_z = 0;
+            sum_buf.slideGyo_x = 0;
+            sum_buf.slideGyo_y = 0;
+            sum_buf.slideGyo_z = 0;
+            sum_buf.slideMag_x = 0;
+            sum_buf.slideMag_y = 0;
+            sum_buf.slideMag_z = 0;
+            sum_buf.slideGps_yaw = 0;
+            sum_buf.slideGps_v = 0;
+        }
+    }
+    fclose(fresult);
+}
