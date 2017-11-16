@@ -81,7 +81,8 @@ int getGyrOrientation0 = 0;
 int firstSmooth = 0;
 int count_itr = 0;
 int datacnt = 1;
-int zerocnt = 0;//数梅派一组数据零计数
+
+char *timeStamp[256];
 
 double pitch0 = 0, roll0 = 0, yaw0 = 0;
 double Pitch = 0, Roll = 0, Yaw = 0;
@@ -230,9 +231,12 @@ void *start_deal(void *que) {
         while (isEmpty(queue)) {}
         struct Data data = DeQueue(queue);
         if (isDataValid(data) == 0) {
-            printf("Data is valid..\r\n\r\n");
+            printf("Data is unvalid..\r\n\r\n");
             continue;
         }
+        memset(timeStamp,0,256);
+        sprintf(timeStamp,"20%d-%d-%d %d:%d:%.3f",
+                data.Year,data.Mounth,data.Day,data.Hour,data.Minute,data.Second);
         double ax = -(data.acc_x - accCalStc_X);
         double ay = -(data.acc_y - accCalStc_Y);
         double az = -(data.acc_z - accCalStc_Z);
@@ -553,13 +557,13 @@ void *start_deal(void *que) {
             lastGz = gz;
 
             fprintf(fresult, "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,"
-                            "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d\n",
+                            "%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d,%s\n",
                     smoothGPSYaw,Roll, Pitch, Yaw, Vccq[0], Vccq[1], Vccq[2], lastVx, lastVy, lastVz, E * rad2deg,
                     L * rad2deg, h,resultOrientation[0],resultOrientation[1],resultOrientation[2],resultOrientation[3],
-                    stepP[0],stepP[1],lastGPSLattitude,lastGPSyaw,queueWindow_mag_avg,queueWindow_gyo_avg,datacnt);
-            fprintf(f_imu_a, "%d,%f,%f,%f\n", datacnt, Vccq[0], Vccq[1], Vccq[2]);
-            fprintf(f_imu_v, "%d,%f,%f,%f\n", datacnt, lastVx, lastVy, lastVz);
-            fprintf(f_imu_p, "%d,%f,%f,%f\n", datacnt, E * rad2deg, L * rad2deg, h);
+                    stepP[0],stepP[1],lastGPSLattitude,lastGPSyaw,queueWindow_mag_avg,queueWindow_gyo_avg,datacnt,timeStamp);
+            fprintf(f_imu_a, "%d,%f,%f,%f,%s\n", datacnt, Vccq[0], Vccq[1], Vccq[2],timeStamp);
+            fprintf(f_imu_v, "%d,%f,%f,%f,%s\n", datacnt, lastVx, lastVy, lastVz,timeStamp);
+            fprintf(f_imu_p, "%d,%f,%f,%f,%s\n", datacnt, E * rad2deg, L * rad2deg, h,timeStamp);
             datacnt++;
             sum_buf.slideAcc_x = 0;
             sum_buf.slideAcc_y = 0;
@@ -628,7 +632,7 @@ void Eular2R(struct Data d) {
 }
 
 void write_raw_data(struct Data d, FILE *fp) {
-    fprintf(fp, "%f,%f,%f,%f,%f,%f,%d,%d,%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d\n"
+    fprintf(fp, "%f,%f,%f,%f,%f,%f,%d,%d,%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%d,%s\n"
             , d.acc_x, d.acc_y, d.acc_z
             , d.gyo_x, d.gyo_y, d.gyo_z
             , d.m_x, d.m_y, d.m_z
@@ -637,17 +641,17 @@ void write_raw_data(struct Data d, FILE *fp) {
             , d.Yaw, d.GPSV, d.Q_q0
             , d.Q_q1, d.Q_q2, d.Q_q3
             , d.SN, d.PDOP, d.HDOP
-            , d.VDOP,datacnt);
+            , d.VDOP,datacnt,timeStamp);
 }
 
 void write_slidefit_data(struct slideRes r, FILE *fp) {
-    fprintf(fp, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f\n",
+    fprintf(fp, "%d,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%f,%s\n",
             datacnt, r.slideAcc_x, r.slideAcc_y, r.slideAcc_z, r.slideGyo_x, r.slideGyo_y, r.slideGyo_z,
-            r.slideMag_x, r.slideMag_y, r.slideMag_z, r.slideJy_yaw, r.slideGps_yaw, r.slideGps_v);
+            r.slideMag_x, r.slideMag_y, r.slideMag_z, r.slideJy_yaw, r.slideGps_yaw, r.slideGps_v,timeStamp);
 }
 
 void write_raw_gps(struct Data d, FILE *fp) {
-    fprintf(fp, "%d,%f,%f,%f\n", datacnt, d.Longitude, d.Lattitude, d.Height);
+    fprintf(fp, "%d,%f,%f,%f,%s\n", datacnt, d.Longitude, d.Lattitude, d.Height,timeStamp);
 }
 
 //-----------------------------deal thread end-----------------------------------------
@@ -766,6 +770,10 @@ void collectSensorData(int fd) {
                     stcTime.ucMinute = ucRxBuffer[6];
                     stcTime.ucSecond = ucRxBuffer[7];
                     stcTime.ucMiliSecond = (ucRxBuffer[9] << 8) | ucRxBuffer[8];
+                    input_data.Year = stcTime.ucYear;
+                    input_data.Mounth = stcTime.ucMonth;
+                    input_data.Day = stcTime.ucDay;
+                    input_data.Hour = stcTime.ucHour;
                     input_data.Minute = stcTime.ucMinute;
                     input_data.Second = (double) stcTime.ucSecond + (double) stcTime.ucMiliSecond / 1000;
                     break;

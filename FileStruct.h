@@ -5,6 +5,10 @@
 #ifndef GPS_INS_FILESTRUCT_H
 #define GPS_INS_FILESTRUCT_H
 struct Data{
+	int Year;
+	int Mounth;
+	int Day;
+	int Hour;
 	int Minute;
 	double Second;
 
