@@ -81,6 +81,7 @@ int getGyrOrientation0 = 0;
 int firstSmooth = 0;
 int count_itr = 0;
 int datacnt = 1;
+int firstStaticGpsUse = 1;
 
 char *timeStamp[256];
 
@@ -94,6 +95,7 @@ double *mahonyR, *Fn;
 double m_temp[3];
 double Px = 0, Py = 0;
 double lastGPSLongtitude = 0, lastGPSLattitude = 0, lastGPSh = 0,lastGPSyaw = 0,lastGPSv = 0;
+double lastGPSLongtitudeStatic = 0, lastGPSLattitudeStatic = 0, lastGPShStatic = 0;
 double Vccq[3];
 
 //方向
@@ -396,6 +398,7 @@ void *start_deal(void *que) {
 
             //-------------------------------------------------------融合------------------------------------------------------------------------//
             if (data.SN >= 4) {
+
                 firstsetOffLocation = 1;
                 if(count_itr++ == worksize){
                     lastGPSh = GPSHeight;
@@ -468,6 +471,20 @@ void *start_deal(void *que) {
                 if(distance1 >= distace_GPS && distance2 < 100){
                     L = GPSLattitude * deg2rad;
                     E = GPSLongitude * deg2rad;
+                }
+
+                if (data.GPSV == 0 && fabs(-ay + accCalStc_Y) < 0.03){
+                    if(firstStaticGpsUse == 1)
+                    {
+                        lastGPSLattitudeStatic = lastGPSLattitude;
+                        lastGPSLongtitudeStatic = lastGPSLongtitude;
+                        lastGPShStatic = lastGPSh;
+                        firstStaticGpsUse = 0;
+                    }
+                    L = lastGPSLattitudeStatic * deg2rad;
+                    E = lastGPSLongtitudeStatic * deg2rad;
+                    h = lastGPShStatic;
+
                 }
 
                 //根据磁力航向和gps航向比较判断当前磁力是否有效
@@ -776,6 +793,7 @@ void collectSensorData(int fd) {
                     input_data.Hour = stcTime.ucHour;
                     input_data.Minute = stcTime.ucMinute;
                     input_data.Second = (double) stcTime.ucSecond + (double) stcTime.ucMiliSecond / 1000;
+
                     break;
                 case 0x51:
                     stcAcc.a[0] = ((short) ucRxBuffer[3] << 8) | ucRxBuffer[2];
